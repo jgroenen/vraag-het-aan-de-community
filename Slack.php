@@ -30,6 +30,34 @@ class Slack
     }
 
     /**
+     * Send a reply to a thread in a channel
+     *
+     * @param string $channel Channel ID
+     * @param string $threadTs Thread timestamp to reply to
+     * @param string $text Message text
+     * @return array Response from Slack API
+     */
+    public function sendThreadReply(string $channel, string $threadTs, string $text): array
+    {
+        $response = file_get_contents($this->baseUrl . '/chat.postMessage', false, stream_context_create([
+            'http' => [
+                'method'  => 'POST',
+                'header'  => implode("\r\n", [
+                    'Content-Type: application/json; charset=utf-8',
+                    'Authorization: Bearer ' . $this->token,
+                ]),
+                'content' => json_encode([
+                    'channel' => $channel,
+                    'text'    => $text,
+                    'thread_ts' => $threadTs,
+                ]),
+            ],
+        ]));
+
+        return json_decode($response, true);
+    }
+
+    /**
      * Get conversation history for a channel
      *
      * @param string $channel Channel ID
