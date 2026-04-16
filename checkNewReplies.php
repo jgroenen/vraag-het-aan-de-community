@@ -54,45 +54,26 @@ echo "Found " . count($mapping) . " thread(s) in mapping\n";
 if ($lastCheck) {
     echo "Last check: " . date('Y-m-d H:i:s', (int)$lastCheck) . "\n";
 }
-
-// Get messages from the channel since last check (much more efficient!)
-echo "Fetching messages from channel";
-if ($lastCheck) {
-    echo " since last check";
-}
-echo "...\n";
-
-$allMessages = $slack->getConversationHistory($channelId, 100, $lastCheck);
-echo "Retrieved " . count($allMessages) . " messages\n\n";
+echo "\n";
 
 // Update last check timestamp to now
 $currentTimestamp = (string)time();
 $state->setLastSlackCheck($currentTimestamp);
 
-// Group messages by thread_ts
-$messagesByThread = [];
-foreach ($allMessages as $message) {
-    $threadTs = $message['thread_ts'] ?? $message['ts'];
-    if (!isset($messagesByThread[$threadTs])) {
-        $messagesByThread[$threadTs] = [];
-    }
-    // Only add if it's actually a reply (not the parent message)
-    if (isset($message['thread_ts']) && $message['thread_ts'] !== $message['ts']) {
-        $messagesByThread[$threadTs][] = $message;
-    }
-}
-
 $newRepliesCount = 0;
 
-// Now check only threads we're tracking
+// Check each tracked thread for new replies
 foreach ($mapping as $threadTs => $mastodonStatusId) {
-    $replies = $messagesByThread[$threadTs] ?? [];
+    echo "Checking thread $threadTs (Mastodon status: $mastodonStatusId)\n";
+
+    // Get all replies in this thread
+    $replies = $slack->getThreadReplies($channelId, $threadTs);
 
     if (empty($replies)) {
+        echo "  No replies found\n\n";
         continue;
     }
 
-    echo "Checking thread $threadTs (Mastodon status: $mastodonStatusId)\n";
     echo "  Found " . count($replies) . " reply/replies\n";
 
     foreach ($replies as $reply) {
