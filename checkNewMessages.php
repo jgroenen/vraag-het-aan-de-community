@@ -13,6 +13,8 @@ $slackChannel = $_SERVER['SLACK_CHANNEL'] ?? '#vragen-vanuit-mastodon';
 
 // File to store the last processed notification ID
 $lastIdFile = __DIR__ . '/last_mastodon_id.txt';
+// File to store the mapping between Slack thread_ts and Mastodon status_id
+$mappingFile = __DIR__ . '/slack_mastodon_mapping.json';
 
 if (!$mastodonToken || !$slackToken) {
     die("Error: MASTO_TOKEN and SLACK_TOKEN environment variables are required\n");
@@ -24,6 +26,9 @@ $slack = new Slack($slackToken);
 
 // Get last processed ID
 $lastId = file_exists($lastIdFile) ? trim(file_get_contents($lastIdFile)) : null;
+
+// Load existing mapping
+$mapping = file_exists($mappingFile) ? json_decode(file_get_contents($mappingFile), true) : [];
 
 echo "Checking for new Mastodon mentions...\n";
 if ($lastId) {
@@ -73,13 +78,25 @@ foreach ($notifications as $notification) {
     $result = $slack->sendMessage($slackChannel, $slackMessage);
 
     if ($result['ok'] ?? false) {
-        echo "   Sent to Slack\n";
+        echo "   Sent to Slack\n";
         $newLastId = $notificationId;
+
+        // Store mapping between Slack thread_ts and Mastodon status_id
+        $threadTs = $result['ts'] ?? null;
+        if ($threadTs) {
+            $mapping[$threadTs] = $statusId;
+            echo "   Stored mapping: Slack thread $threadTs -> Mastodon status $statusId\n";
+        }
     } else {
-        echo "   Failed to send to Slack: " . ($result['error'] ?? 'unknown error') . "\n";
+        echo "   Failed to send to Slack: " . ($result['error'] ?? 'unknown error') . "\n";
     }
 
     echo "\n";
+}
+
+// Save the mapping
+if (!empty($mapping)) {
+    file_put_contents($mappingFile, json_encode($mapping, JSON_PRETTY_PRINT));
 }
 
 // Save the last processed ID
