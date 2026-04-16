@@ -6,6 +6,7 @@ header('Content-Type: text/plain; charset=utf-8');
 require_once __DIR__ . '/loadEnv.php';
 require_once __DIR__ . '/Mastodon.php';
 require_once __DIR__ . '/Slack.php';
+require_once __DIR__ . '/BridgeState.php';
 
 // Configuration from environment variables
 $mastodonInstance = $_ENV['MASTO_INSTANCE'] ?? 'https://social.codefor.nl';
@@ -13,18 +14,14 @@ $mastodonToken = $_ENV['MASTO_TOKEN'] ?? null;
 $slackToken = $_ENV['SLACK_TOKEN'] ?? null;
 $slackChannel = $_ENV['SLACK_CHANNEL'] ?? '#vragen-vanuit-mastodon';
 
-// File to store the mapping between Slack thread_ts and Mastodon status_id
-$mappingFile = __DIR__ . '/slack_mastodon_mapping.json';
-// File to store which Slack replies have been processed
-$processedRepliesFile = __DIR__ . '/processed_slack_replies.json';
-
 if (!$mastodonToken || !$slackToken) {
     die("Error: MASTO_TOKEN and SLACK_TOKEN environment variables are required\n");
 }
 
-// Initialize API clients
+// Initialize API clients and state
 $mastodon = new Mastodon($mastodonInstance, $mastodonToken);
 $slack = new Slack($slackToken);
+$state = new BridgeState();
 
 // Convert channel name to channel ID if needed
 $channelId = $slack->getChannelId($slackChannel);
@@ -42,40 +39,60 @@ if (!$botUserId) {
 }
 echo "\n";
 
-// Load mapping between Slack thread_ts and Mastodon status_id
-if (!file_exists($mappingFile)) {
-    echo "No mapping file found. Run checkNewMessages.php first.\n";
-    exit(0);
-}
-
-$mapping = json_decode(file_get_contents($mappingFile), true);
-
+// Get thread mapping
+$mapping = $state->getThreadMapping();
 if (empty($mapping)) {
-    echo "No thread mappings found.\n";
+    echo "No thread mappings found. Run checkNewMessages.php first.\n";
     exit(0);
 }
 
-// Load processed replies
-$processedReplies = file_exists($processedRepliesFile)
-    ? json_decode(file_get_contents($processedRepliesFile), true)
-    : [];
+// Get last check timestamp
+$lastCheck = $state->getLastSlackCheck();
 
 echo "Checking for new Slack replies...\n";
-echo "Found " . count($mapping) . " thread(s) to check\n\n";
+echo "Found " . count($mapping) . " thread(s) in mapping\n";
+if ($lastCheck) {
+    echo "Last check: " . date('Y-m-d H:i:s', (int)$lastCheck) . "\n";
+}
+
+// Get messages from the channel since last check (much more efficient!)
+echo "Fetching messages from channel";
+if ($lastCheck) {
+    echo " since last check";
+}
+echo "...\n";
+
+$allMessages = $slack->getConversationHistory($channelId, 100, $lastCheck);
+echo "Retrieved " . count($allMessages) . " messages\n\n";
+
+// Update last check timestamp to now
+$currentTimestamp = (string)time();
+$state->setLastSlackCheck($currentTimestamp);
+
+// Group messages by thread_ts
+$messagesByThread = [];
+foreach ($allMessages as $message) {
+    $threadTs = $message['thread_ts'] ?? $message['ts'];
+    if (!isset($messagesByThread[$threadTs])) {
+        $messagesByThread[$threadTs] = [];
+    }
+    // Only add if it's actually a reply (not the parent message)
+    if (isset($message['thread_ts']) && $message['thread_ts'] !== $message['ts']) {
+        $messagesByThread[$threadTs][] = $message;
+    }
+}
 
 $newRepliesCount = 0;
 
+// Now check only threads we're tracking
 foreach ($mapping as $threadTs => $mastodonStatusId) {
-    echo "Checking thread $threadTs (Mastodon status: $mastodonStatusId)\n";
-
-    // Get thread replies from Slack (use channel ID instead of name)
-    $replies = $slack->getThreadReplies($channelId, $threadTs);
+    $replies = $messagesByThread[$threadTs] ?? [];
 
     if (empty($replies)) {
-        echo "  No replies found\n";
         continue;
     }
 
+    echo "Checking thread $threadTs (Mastodon status: $mastodonStatusId)\n";
     echo "  Found " . count($replies) . " reply/replies\n";
 
     foreach ($replies as $reply) {
@@ -102,7 +119,7 @@ foreach ($mapping as $threadTs => $mastodonStatusId) {
         }
 
         // Check if this reply has already been processed
-        if (isset($processedReplies[$replyTs])) {
+        if ($state->isReplyProcessed($replyTs)) {
             echo "    Reply $replyTs already processed, skipping\n";
             continue;
         }
@@ -118,10 +135,7 @@ foreach ($mapping as $threadTs => $mastodonStatusId) {
 
         if ($result) {
             echo "      Posted to Mastodon successfully\n";
-            $processedReplies[$replyTs] = [
-                'mastodon_status_id' => $result['id'] ?? null,
-                'processed_at' => date('Y-m-d H:i:s'),
-            ];
+            $state->markReplyProcessed($replyTs, $result['id'] ?? null);
             $newRepliesCount++;
         } else {
             echo "      Failed to post to Mastodon\n";
@@ -131,8 +145,8 @@ foreach ($mapping as $threadTs => $mastodonStatusId) {
     echo "\n";
 }
 
-// Save processed replies
-file_put_contents($processedRepliesFile, json_encode($processedReplies, JSON_PRETTY_PRINT));
+// Save state
+$state->save();
 
 if ($newRepliesCount > 0) {
     echo "Posted $newRepliesCount new reply/replies to Mastodon\n";

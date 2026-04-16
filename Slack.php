@@ -149,14 +149,21 @@ class Slack
      *
      * @param string $channel Channel ID
      * @param int $limit Maximum number of messages to retrieve
+     * @param string|null $oldest Only messages after this timestamp (Unix timestamp)
      * @return array Array of messages
      */
-    public function getConversationHistory(string $channel, int $limit = 100): array
+    public function getConversationHistory(string $channel, int $limit = 100, ?string $oldest = null): array
     {
-        $url = $this->baseUrl . '/conversations.history?' . http_build_query([
+        $params = [
             'channel' => $channel,
             'limit' => $limit,
-        ]);
+        ];
+
+        if ($oldest !== null) {
+            $params['oldest'] = $oldest;
+        }
+
+        $url = $this->baseUrl . '/conversations.history?' . http_build_query($params);
 
         $response = file_get_contents($url, false, stream_context_create([
             'http' => [

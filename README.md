@@ -36,33 +36,59 @@ Maak een Slack App aan:
    - `chat:write` - Om berichten te posten
 4. Installeer de app in je workspace
 5. Kopieer de **Bot User OAuth Token** (begint met `xoxb-`)
+6. Nodig de bot uit in het kanaal met `/invite @botname`
 
-#### Environment variabelen
+### Configuratie
 
-Configureer de volgende environment variabelen:
+Maak een `.env` bestand aan op basis van het `.env.example` bestand:
 
 ```bash
-export MASTO_INSTANCE="https://social.codefor.nl"
-export MASTO_TOKEN="je-mastodon-access-token"
-export SLACK_TOKEN="xoxb-je-slack-bot-token"
-export SLACK_CHANNEL="#vragen-vanuit-mastodon"
+cp .env.example .env
 ```
+
+Vul de tokens in het `.env` bestand in:
+
+```env
+MASTO_INSTANCE=https://social.codefor.nl
+MASTO_TOKEN=je-mastodon-access-token
+SLACK_TOKEN=xoxb-je-slack-bot-token
+SLACK_CHANNEL=C0ATJLU6DED
+```
+
+**Let op:** `SLACK_CHANNEL` kan zowel een channel ID (bijv. `C0ATJLU6DED`) als een channel naam (bijv. `#vragen-vanuit-mastodon`) zijn.
 
 ### Scripts
 
+De bridge bestaat uit twee scripts die samen de synchronisatie verzorgen:
+
 #### checkNewMessages.php
-Checkt Mastodon voor nieuwe mentions/vragen en stuurt deze naar Slack:
+Controleert Mastodon voor nieuwe mentions/vragen en stuurt deze naar Slack:
+- Haalt nieuwe mentions op van Mastodon
+- Controleert of het een nieuwe vraag of een reactie is
+- Nieuwe vragen worden naar Slack gestuurd
+- Reacties op Mastodon worden in de juiste Slack thread geplaatst
 
 ```bash
 php checkNewMessages.php
 ```
 
-#### checkSlackReplies.php
-Checkt Slack threads voor nieuwe replies en post deze terug naar Mastodon:
+#### checkNewReplies.php
+Controleert Slack threads voor nieuwe replies van community members en post deze naar Mastodon:
+- Haalt nieuwe berichten op uit het Slack kanaal (alleen sinds laatste check)
+- Filtert bot-berichten en eigen berichten uit (voorkomt loops)
+- Post community antwoorden als replies op Mastodon
 
 ```bash
-php checkSlackReplies.php
+php checkNewReplies.php
 ```
+
+### State management
+
+Alle state wordt opgeslagen in één JSON bestand: `bridge_state.json`. Dit bestand bevat:
+- `last_mastodon_id` - Laatste verwerkte Mastodon notification ID
+- `last_slack_check` - Timestamp van laatste Slack check
+- `thread_mapping` - Mapping tussen Slack threads en Mastodon statuses
+- `processed_replies` - Welke Slack replies al verwerkt zijn
 
 ### Automatisch draaien met cron
 
@@ -70,5 +96,36 @@ Voeg de scripts toe aan je crontab om ze periodiek te draaien (bijvoorbeeld elke
 
 ```bash
 */5 * * * * cd /pad/naar/bridge.codefor.nl && php checkNewMessages.php >> /var/log/mastodon-bridge.log 2>&1
-*/5 * * * * cd /pad/naar/bridge.codefor.nl && php checkSlackReplies.php >> /var/log/mastodon-bridge.log 2>&1
+*/5 * * * * cd /pad/naar/bridge.codefor.nl && php checkNewReplies.php >> /var/log/mastodon-bridge.log 2>&1
 ```
+
+## Architectuur
+
+### Bestandsstructuur
+
+```
+bridge.codefor.nl/
+├── .env.example          # Template voor configuratie
+├── .env                  # Configuratie (niet in git)
+├── .gitignore           # Git ignore regels
+├── BridgeState.php      # State management class
+├── Mastodon.php         # Mastodon API wrapper
+├── Slack.php            # Slack API wrapper
+├── loadEnv.php          # .env file loader
+├── checkNewMessages.php # Script voor Mastodon → Slack
+├── checkNewReplies.php  # Script voor Slack → Mastodon
+└── bridge_state.json    # Runtime state (niet in git)
+```
+
+### Veiligheid
+
+- **Credentials**: Tokens worden opgeslagen in `.env` (niet in git)
+- **Bot detection**: Bot berichten worden gefilterd om loops te voorkomen
+- **Rate limiting**: Gebruikt timestamps om alleen nieuwe berichten op te halen
+- **Minimal API calls**: 1 API call per run in plaats van N calls per thread
+
+### Anti-loop mechanisme
+
+De bridge voorkomt oneindige loops op twee manieren:
+1. **Bot user ID check**: Berichten van de bot zelf worden geskipt
+2. **Processed replies tracking**: Verwerkte berichten worden bijgehouden in state

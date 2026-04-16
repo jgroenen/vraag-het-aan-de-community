@@ -1,7 +1,11 @@
 # Environment variables
 .env
 
-# Runtime data
+# Runtime data - all state is now in bridge_state.json
+bridge_state.json
+
+# Legacy state files (can be deleted if they exist)
 last_mastodon_id.txt
+last_slack_check.txt
 slack_mastodon_mapping.json
 processed_slack_replies.json

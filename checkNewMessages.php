@@ -6,6 +6,7 @@ header('Content-Type: text/plain; charset=utf-8');
 require_once __DIR__ . '/loadEnv.php';
 require_once __DIR__ . '/Mastodon.php';
 require_once __DIR__ . '/Slack.php';
+require_once __DIR__ . '/BridgeState.php';
 
 // Configuration from environment variables
 $mastodonInstance = $_ENV['MASTO_INSTANCE'] ?? 'https://social.codefor.nl';
@@ -13,24 +14,17 @@ $mastodonToken = $_ENV['MASTO_TOKEN'] ?? null;
 $slackToken = $_ENV['SLACK_TOKEN'] ?? null;
 $slackChannel = $_ENV['SLACK_CHANNEL'] ?? '#vragen-vanuit-mastodon';
 
-// File to store the last processed notification ID
-$lastIdFile = __DIR__ . '/last_mastodon_id.txt';
-// File to store the mapping between Slack thread_ts and Mastodon status_id
-$mappingFile = __DIR__ . '/slack_mastodon_mapping.json';
-
 if (!$mastodonToken || !$slackToken) {
     die("Error: MASTO_TOKEN and SLACK_TOKEN environment variables are required\n");
 }
 
-// Initialize API clients
+// Initialize API clients and state
 $mastodon = new Mastodon($mastodonInstance, $mastodonToken);
 $slack = new Slack($slackToken);
+$state = new BridgeState();
 
 // Get last processed ID
-$lastId = file_exists($lastIdFile) ? trim(file_get_contents($lastIdFile)) : null;
-
-// Load existing mapping
-$mapping = file_exists($mappingFile) ? json_decode(file_get_contents($mappingFile), true) : [];
+$lastId = $state->getLastMastodonId();
 
 echo "Checking for new Mastodon mentions...\n";
 if ($lastId) {
@@ -74,7 +68,7 @@ foreach ($notifications as $notification) {
         echo "  This is a reply to Mastodon status: $inReplyToId\n";
 
         // Find the corresponding Slack thread
-        $slackThreadTs = array_search($inReplyToId, $mapping);
+        $slackThreadTs = array_search($inReplyToId, $state->getThreadMapping());
 
         if ($slackThreadTs) {
             echo "  Found corresponding Slack thread: $slackThreadTs\n";
@@ -123,7 +117,7 @@ foreach ($notifications as $notification) {
         // Store mapping between Slack thread_ts and Mastodon status_id
         $threadTs = $result['ts'] ?? null;
         if ($threadTs) {
-            $mapping[$threadTs] = $statusId;
+            $state->addThreadMapping($threadTs, $statusId);
             echo "   Stored mapping: Slack thread $threadTs -> Mastodon status $statusId\n";
         }
     } else {
@@ -133,15 +127,11 @@ foreach ($notifications as $notification) {
     echo "\n";
 }
 
-// Save the mapping
-if (!empty($mapping)) {
-    file_put_contents($mappingFile, json_encode($mapping, JSON_PRETTY_PRINT));
-}
-
-// Save the last processed ID
+// Save state (mapping and last processed ID)
 if ($newLastId !== $lastId) {
-    file_put_contents($lastIdFile, $newLastId);
+    $state->setLastMastodonId($newLastId);
     echo "Updated last processed ID to: $newLastId\n";
 }
+$state->save();
 
 echo "Done.\n";
