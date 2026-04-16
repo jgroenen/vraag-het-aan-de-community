@@ -24,6 +24,13 @@ if (!$mastodonToken || !$slackToken) {
 $mastodon = new Mastodon($mastodonInstance, $mastodonToken);
 $slack = new Slack($slackToken);
 
+// Convert channel name to channel ID if needed
+$channelId = $slack->getChannelId($slackChannel);
+if (!$channelId) {
+    die("Error: Could not find channel '$slackChannel'. Make sure the channel exists and the bot has access.\n");
+}
+echo "Using channel ID: $channelId (from $slackChannel)\n\n";
+
 // Load mapping between Slack thread_ts and Mastodon status_id
 if (!file_exists($mappingFile)) {
     echo "No mapping file found. Run checkNewMessages.php first.\n";
@@ -50,8 +57,8 @@ $newRepliesCount = 0;
 foreach ($mapping as $threadTs => $mastodonStatusId) {
     echo "Checking thread $threadTs (Mastodon status: $mastodonStatusId)\n";
 
-    // Get thread replies from Slack
-    $replies = $slack->getThreadReplies($slackChannel, $threadTs);
+    // Get thread replies from Slack (use channel ID instead of name)
+    $replies = $slack->getThreadReplies($channelId, $threadTs);
 
     if (empty($replies)) {
         echo "  No replies found\n";

@@ -10,6 +10,50 @@ class Slack
         $this->token = $token;
     }
 
+    /**
+     * Convert channel name to channel ID
+     *
+     * @param string $channel Channel name (with or without #) or channel ID
+     * @return string|null Channel ID or null if not found
+     */
+    public function getChannelId(string $channel): ?string
+    {
+        // If it's already a channel ID (starts with C), return it
+        if (preg_match('/^C[A-Z0-9]+$/', $channel)) {
+            return $channel;
+        }
+
+        // Remove # prefix if present
+        $channelName = ltrim($channel, '#');
+
+        $url = $this->baseUrl . '/conversations.list?' . http_build_query([
+            'types' => 'public_channel,private_channel',
+            'limit' => 1000,
+        ]);
+
+        $response = file_get_contents($url, false, stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => 'Authorization: Bearer ' . $this->token,
+            ],
+        ]));
+
+        if ($response === false) {
+            return null;
+        }
+
+        $result = json_decode($response, true);
+        $channels = $result['channels'] ?? [];
+
+        foreach ($channels as $ch) {
+            if ($ch['name'] === $channelName) {
+                return $ch['id'];
+            }
+        }
+
+        return null;
+    }
+
     public function sendMessage(string $channel, string $text): array
     {
         $response = file_get_contents($this->baseUrl . '/chat.postMessage', false, stream_context_create([
@@ -108,10 +152,19 @@ class Slack
         ]));
 
         if ($response === false) {
+            echo "    ERROR: Failed to get response from Slack API\n";
             return [];
         }
 
         $result = json_decode($response, true);
+
+        // Debug: show the full response
+        if (!($result['ok'] ?? false)) {
+            echo "    ERROR from Slack API: " . ($result['error'] ?? 'unknown') . "\n";
+            echo "    Full response: " . json_encode($result) . "\n";
+            return [];
+        }
+
         $messages = $result['messages'] ?? [];
 
         // First message is the parent, rest are replies
