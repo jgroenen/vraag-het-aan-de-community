@@ -1,0 +1,7 @@
+# Environment variables
+.env
+
+# Runtime data
+last_mastodon_id.txt
+slack_mastodon_mapping.json
+processed_slack_replies.json

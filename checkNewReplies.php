@@ -2,14 +2,16 @@
 
 header('Content-Type: text/plain; charset=utf-8');
 
+// Load environment variables from .env file
+require_once __DIR__ . '/loadEnv.php';
 require_once __DIR__ . '/Mastodon.php';
 require_once __DIR__ . '/Slack.php';
 
 // Configuration from environment variables
-$mastodonInstance = $_SERVER['MASTO_INSTANCE'] ?? 'https://social.codefor.nl';
-$mastodonToken = $_SERVER['MASTO_TOKEN'] ?? null;
-$slackToken = $_SERVER['SLACK_TOKEN'] ?? null;
-$slackChannel = $_SERVER['SLACK_CHANNEL'] ?? '#vragen-vanuit-mastodon';
+$mastodonInstance = $_ENV['MASTO_INSTANCE'] ?? 'https://social.codefor.nl';
+$mastodonToken = $_ENV['MASTO_TOKEN'] ?? null;
+$slackToken = $_ENV['SLACK_TOKEN'] ?? null;
+$slackChannel = $_ENV['SLACK_CHANNEL'] ?? '#vragen-vanuit-mastodon';
 
 // File to store the mapping between Slack thread_ts and Mastodon status_id
 $mappingFile = __DIR__ . '/slack_mastodon_mapping.json';
