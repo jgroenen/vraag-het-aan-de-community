@@ -6,8 +6,8 @@ require_once __DIR__ . '/Mastodon.php';
 require_once __DIR__ . '/Slack.php';
 
 // Configuration from environment variables
-$mastodonInstance = $_SERVER['MASTODON_INSTANCE'] ?? 'https://social.codefor.nl';
-$mastodonToken = $_SERVER['MASTODON_TOKEN'] ?? null;
+$mastodonInstance = $_SERVER['MASTO_INSTANCE'] ?? 'https://social.codefor.nl';
+$mastodonToken = $_SERVER['MASTO_TOKEN'] ?? null;
 $slackToken = $_SERVER['SLACK_TOKEN'] ?? null;
 $slackChannel = $_SERVER['SLACK_CHANNEL'] ?? '#vragen-vanuit-mastodon';
 
@@ -15,7 +15,7 @@ $slackChannel = $_SERVER['SLACK_CHANNEL'] ?? '#vragen-vanuit-mastodon';
 $lastIdFile = __DIR__ . '/last_mastodon_id.txt';
 
 if (!$mastodonToken || !$slackToken) {
-    die("Error: MASTODON_TOKEN and SLACK_TOKEN environment variables are required\n");
+    die("Error: MASTO_TOKEN and SLACK_TOKEN environment variables are required\n");
 }
 
 // Initialize API clients
