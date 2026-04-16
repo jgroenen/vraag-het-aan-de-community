@@ -31,7 +31,16 @@ $channelId = $slack->getChannelId($slackChannel);
 if (!$channelId) {
     die("Error: Could not find channel '$slackChannel'. Make sure the channel exists and the bot has access.\n");
 }
-echo "Using channel ID: $channelId (from $slackChannel)\n\n";
+echo "Using channel ID: $channelId (from $slackChannel)\n";
+
+// Get bot's own user ID to skip messages from ourselves
+$botUserId = $slack->getBotUserId();
+if (!$botUserId) {
+    echo "Warning: Could not get bot user ID. Will skip based on bot_id field only.\n";
+} else {
+    echo "Bot user ID: $botUserId\n";
+}
+echo "\n";
 
 // Load mapping between Slack thread_ts and Mastodon status_id
 if (!file_exists($mappingFile)) {
@@ -73,8 +82,22 @@ foreach ($mapping as $threadTs => $mastodonStatusId) {
         $replyTs = $reply['ts'] ?? null;
         $replyText = $reply['text'] ?? '';
         $replyUser = $reply['user'] ?? 'unknown';
+        $botId = $reply['bot_id'] ?? null;
+        $appId = $reply['app_id'] ?? null;
 
         if (!$replyTs) {
+            continue;
+        }
+
+        // Skip messages from the bot itself (to avoid circular posting)
+        if ($botUserId && $replyUser === $botUserId) {
+            echo "    Reply $replyTs is from the bot itself, skipping to avoid loop\n";
+            continue;
+        }
+
+        // Also skip other bot messages as fallback
+        if ($botId || $appId || isset($reply['bot_profile'])) {
+            echo "    Reply $replyTs is from a bot, skipping\n";
             continue;
         }
 

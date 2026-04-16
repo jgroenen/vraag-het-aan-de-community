@@ -5,9 +5,45 @@ class Slack
     private string $token;
     private string $baseUrl = 'https://slack.com/api';
 
+    private ?string $botUserId = null;
+
     public function __construct(string $token)
     {
         $this->token = $token;
+    }
+
+    /**
+     * Get the bot's own user ID
+     *
+     * @return string|null Bot user ID or null on failure
+     */
+    public function getBotUserId(): ?string
+    {
+        if ($this->botUserId !== null) {
+            return $this->botUserId;
+        }
+
+        $url = $this->baseUrl . '/auth.test';
+
+        $response = file_get_contents($url, false, stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'header' => 'Authorization: Bearer ' . $this->token,
+            ],
+        ]));
+
+        if ($response === false) {
+            return null;
+        }
+
+        $result = json_decode($response, true);
+
+        if ($result['ok'] ?? false) {
+            $this->botUserId = $result['user_id'] ?? null;
+            return $this->botUserId;
+        }
+
+        return null;
     }
 
     /**
