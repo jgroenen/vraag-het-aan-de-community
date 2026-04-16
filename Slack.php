@@ -18,7 +18,7 @@ class Slack
      */
     public function getChannelId(string $channel): ?string
     {
-        // If it's already a channel ID (starts with C), return it
+        // If it's already a channel ID (starts with C), return it as-is
         if (preg_match('/^C[A-Z0-9]+$/', $channel)) {
             return $channel;
         }
@@ -39,10 +39,17 @@ class Slack
         ]));
 
         if ($response === false) {
+            echo "ERROR: Failed to get channel list from Slack\n";
             return null;
         }
 
         $result = json_decode($response, true);
+
+        if (!($result['ok'] ?? false)) {
+            echo "ERROR from Slack API: " . ($result['error'] ?? 'unknown') . "\n";
+            return null;
+        }
+
         $channels = $result['channels'] ?? [];
 
         foreach ($channels as $ch) {
